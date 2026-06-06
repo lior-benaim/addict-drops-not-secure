@@ -144,6 +144,17 @@ tr:last-child td{border-bottom:none}
 .loc-empty-sub{font-size:12px}
 
 /* MOBILE */
+/* CONFIRM BAR */
+.confirm-bar{background:#1a1a1a;border-radius:10px;padding:10px 14px;margin-bottom:12px;display:none;align-items:center;justify-content:space-between;gap:10px}
+.confirm-bar.visible{display:flex}
+.confirm-text{color:#fff;font-size:13px;font-weight:500}
+.confirm-text span{color:#4caf50;font-weight:700}
+.confirm-btns{display:flex;gap:8px}
+.btn-confirm{background:#4caf50;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:13px;cursor:pointer;font-weight:700}
+.btn-confirm:hover{background:#388e3c}
+.btn-cancel-confirm{background:transparent;color:#aaa;border:1px solid #444;border-radius:8px;padding:8px 12px;font-size:13px;cursor:pointer}
+.btn-cancel-confirm:hover{background:#333;color:#fff}
+
 /* STATS PANEL */
 .stats-panel{background:#fff;border-radius:10px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,0.07);overflow:hidden;border:1.5px solid #e8e8e8;display:none}
 .stats-panel.open{display:block}
@@ -218,6 +229,14 @@ tr:last-child td{border-bottom:none}
     </div>
   </div>
 
+  <div class="confirm-bar" id="confirm-bar">
+    <span class="confirm-text">✓ <span id="confirm-count">0</span> cartons selected — move to bottom?</span>
+    <div class="confirm-btns">
+      <button class="btn-cancel-confirm" onclick="cancelConfirm()">Cancel</button>
+      <button class="btn-confirm" onclick="applyConfirm()">✓ Confirm</button>
+    </div>
+  </div>
+
   <div id="list-header" style="display:none">
     <div class="list-header">
       <span class="list-count" id="list-count"></span>
@@ -253,7 +272,7 @@ const firebaseConfig={apiKey:"AIzaSyBbrxhivm9R8o2nzmDXRYADsbcoHKnwvOg",authDomai
 firebase.initializeApp(firebaseConfig);
 const db=firebase.database();
 
-let shipments={},openedCtns={},locations={},completedItems={};
+let shipments={},openedCtns={},locations={},completedItems={},pendingOpened={};
 let activeShipment=null,searchMode='ctn',searchQuery='',expandedCards={};
 
 function notify(msg,type='success'){
@@ -338,8 +357,45 @@ async function handleFile(e){
 }
 
 function toggleCTN(ctn){
-  const newVal=!openedCtns[ctn];
-  db.ref('opened/'+ctn.replace(/[.#$\/\[\]]/g,'-')).set(newVal||null);
+  // Toggle pending state (visual only until confirmed)
+  if(pendingOpened[ctn]){
+    delete pendingOpened[ctn];
+  } else if(!openedCtns[ctn]){
+    pendingOpened[ctn]=true;
+  } else {
+    // Already opened — allow unmark directly
+    db.ref('opened/'+ctn.replace(/[.#$\/\[\]]/g,'-')).set(null);
+    return;
+  }
+  updateConfirmBar();
+  render();
+}
+
+function updateConfirmBar(){
+  const bar=document.getElementById('confirm-bar');
+  const count=Object.keys(pendingOpened).length;
+  if(count>0){
+    bar.className='confirm-bar visible';
+    document.getElementById('confirm-count').textContent=count;
+  } else {
+    bar.className='confirm-bar';
+  }
+}
+
+function applyConfirm(){
+  const updates={};
+  Object.keys(pendingOpened).forEach(ctn=>{
+    updates['opened/'+ctn.replace(/[.#$\/\[\]]/g,'-')]=true;
+  });
+  db.ref().update(updates);
+  pendingOpened={};
+  updateConfirmBar();
+}
+
+function cancelConfirm(){
+  pendingOpened={};
+  updateConfirmBar();
+  render();
 }
 
 function markStyleCtns(item,ctnsArr,val){
@@ -517,11 +573,12 @@ function render(){
   const ctnMap=groupByCTN(entries);
   const itemMap=groupByItem(entries);
 
-  // Sort: unopened first, opened last (chronological within each group)
+  // Sort: pending+unopened first, confirmed opened last
   const allCtns=Object.keys(ctnMap).sort();
-  const unopened=allCtns.filter(c=>!openedCtns[c]);
+  const pending=allCtns.filter(c=>pendingOpened[c]&&!openedCtns[c]);
+  const unopened=allCtns.filter(c=>!openedCtns[c]&&!pendingOpened[c]);
   const opened=allCtns.filter(c=>openedCtns[c]);
-  const sortedCtns=[...unopened,...opened];
+  const sortedCtns=[...pending,...unopened,...opened];
 
   const openedCount=allCtns.filter(c=>openedCtns[c]).length;
   const totalQty=entries.reduce((s,e)=>s+e.qty,0);
@@ -602,14 +659,16 @@ function render(){
 
 function renderCTNCard(ctn,items){
   const opened=!!openedCtns[ctn];
+  const pending=!!pendingOpened[ctn];
   const expanded=expandedCards[ctn]===true;
   const totalQty=items.reduce((s,i)=>s+i.qty,0);
   // Show style NAMES in preview (not codes)
   const styleNames=[...new Set(items.map(i=>i.styleName||i.item))];
   const previewText=styleNames.join(' · ');
-  let html=`<div class="ctn-card ${opened?'opened':''}">
+  const cardClass=opened?'opened':pending?'pending':'';
+  let html=`<div class="ctn-card ${cardClass}">
     <div class="ctn-header" onclick="toggleExpand('${ctn}')">
-      <button class="check-btn ${opened?'checked':''}" onclick="event.stopPropagation();toggleCTN('${ctn}')">${opened?'✓':''}</button>
+      <button class="check-btn ${opened||pending?'checked':''}" style="${pending&&!opened?'background:#fff9c4;border-color:#f59e0b;color:#d97706':''}" onclick="event.stopPropagation();toggleCTN('${ctn}')">${opened?'✓':pending?'✓':''}</button>
       <span class="ctn-number">${ctn}</span>
       <span class="ctn-style-name">${previewText}</span>
       ${opened?'<span class="badge-open">Opened ✓</span>':''}
