@@ -725,9 +725,13 @@ function renderItemCard(item,data){
     </div>
     <div class="ctn-chips">`+ctns.map(ctn=>{
       const isOpen=!!openedCtns[ctn];
+      const isPending=!!pendingOpened[ctn];
       const colors=data.entries.filter(e=>e.ctn===ctn).map(e=>e.color).filter(Boolean).join(', ');
-      return `<div class="ctn-chip ${isOpen?'opened':''}">
-        <div class="chip-check ${isOpen?'checked':''}" onclick="toggleCTN('${ctn}')">${isOpen?'✓':''}</div>
+      const chipClass=isOpen?'opened':isPending?'pending':'';
+      const checkClass=isOpen||isPending?'checked':'';
+      const checkStyle=isPending&&!isOpen?'background:#fff9c4;border-color:#f59e0b;color:#d97706':'';
+      return `<div class="ctn-chip ${chipClass}">
+        <div class="chip-check ${checkClass}" style="${checkStyle}" onclick="toggleCTN('${ctn}')">${isOpen||isPending?'✓':''}</div>
         <span class="chip-name">${ctn}</span>
         ${colors?`<span class="chip-color">${colors}</span>`:''}
       </div>`;
